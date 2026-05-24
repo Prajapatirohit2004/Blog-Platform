@@ -1,19 +1,28 @@
 # Blog Platform with Comments
 
-A full-stack blog platform built with React, Vite, Express, TypeScript, and Tailwind CSS.
+A developer-friendly blog application that demonstrates a complete React + Express workflow with authentication, publishing, and commenting.
 
-This repository includes a web frontend for browsing blog posts and comments, plus a backend API for authentication and content support.
+This project is designed to run locally and includes a working frontend, API server, and JSON-backed persistence for posts, comments, users, and sessions.
 
-## Features
+## What this project includes
 
-- Browse blog posts and view comments
-- Add comments to posts
-- User registration and login
-- REST API endpoints served by Express
-- TypeScript-typed frontend and backend
-- Vite-powered React development environment
+- A React + Vite frontend with a clean dashboard-style UI
+- An Express backend with REST endpoints for posts, comments, and authentication
+- User registration and login using JWT-like session tokens stored in `localStorage`
+- Built-in demo content, including sample posts and comments
+- Persistent storage in `data/db.json` for local development
+- Permission guards so only post authors and admins can edit or delete content
 
-## Tech Stack
+## Key features
+
+- Browse blog posts with summaries and details
+- Create, update, and delete articles when signed in
+- Add comments to any published post
+- Register a new account or log in with an existing one
+- Comment deletion by comment author, post author, or admin
+- Local JSON database backed by `server-db.ts`
+
+## Tech stack
 
 - React
 - Vite
@@ -33,82 +42,101 @@ This repository includes a web frontend for browsing blog posts and comments, pl
    ```bash
    npm install
    ```
-2. Copy `.env.example` to `.env`:
+2. Duplicate the example environment file:
    ```bash
    cp .env.example .env
    ```
-3. Update `.env` with your values.
+   On Windows PowerShell:
+   ```powershell
+   copy .env.example .env
+   ```
+3. Adjust values in `.env` if needed.
 4. Start the development server:
    ```bash
    npm run dev
    ```
 
-## Available Scripts
+The app runs in development mode with Vite and the Express backend serving API routes on the same port.
 
-- `npm run dev` - start the development server
+## Available scripts
+
+- `npm run dev` - run the development server
 - `npm run build` - build the frontend and bundle the server
-- `npm run start` - run the built production server
-- `npm run preview` - preview the production build
+- `npm run start` - start the production build
+- `npm run preview` - preview the production build locally
 - `npm run clean` - remove build artifacts
-- `npm run lint` - run TypeScript type checking
+- `npm run lint` - run TypeScript checks
 
-## Environment Variables
+## Environment variables
 
-Create a `.env` file in the project root with values similar to `.env.example`.
+Create a local `.env` file from `.env.example` and fill in the values.
 
-- `GEMINI_API_KEY` - optional API key for external integrations
-- `APP_URL` - application base URL
+- `GEMINI_API_KEY` - optional key for any external integrations
+- `APP_URL` - app URL used for self-referential links and callbacks
 
-> Do not commit `.env` to source control.
+> Keep `.env` out of version control.
 
-## Project Structure
+## Project structure
 
-- `index.html` - application shell
-- `src/` - React frontend source files
-- `server.ts` - Express backend server
-- `server-db.ts` - in-memory database and authentication helpers
-- `vite.config.ts` - Vite configuration
-- `package.json` - scripts and dependencies
-- `tsconfig.json` - TypeScript configuration
+- `index.html` - app shell and entry point
+- `src/` - React application code
+- `src/App.tsx` - main frontend view and state management
+- `src/api.ts` - API helper functions for frontend requests
+- `src/types.ts` - shared TypeScript models
+- `server.ts` - Express API server and route definitions
+- `server-db.ts` - local JSON persistence, hashing, and session handling
+- `vite.config.ts` - Vite build configuration
+- `data/db.json` - persisted blog data created at runtime
 
-## API Endpoints
+## API Routes
 
-The backend exposes these main routes:
+The backend serves the following routes:
 
-- `POST /api/auth/register` - register a new user
-- `POST /api/auth/login` - login and receive a session token
-- `GET /api/auth/me` - get the current authenticated user
+- `POST /api/auth/register` - create a new user account
+- `POST /api/auth/login` - sign in and receive a session token
+- `POST /api/auth/logout` - log out and invalidate the current session
+- `GET /api/auth/me` - return the authenticated user's profile
+- `GET /api/posts` - list all blog posts
+- `GET /api/posts/:id` - fetch a single post and its comments
+- `POST /api/posts` - create a new blog post (authenticated)
+- `PUT /api/posts/:id` - update an existing post (authenticated, author only)
+- `DELETE /api/posts/:id` - delete a post (authenticated, author only)
+- `POST /api/posts/:postId/comments` - add a comment to a post (authenticated)
+- `DELETE /api/comments/:commentId` - remove a comment (authenticated, author or post owner)
+- `GET /api/health` - health check endpoint
 
-### Example: Register
+### Example: register a new account
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"example","email":"user@example.com","password":"secret123"}'
+  -d '{"username":"tester","email":"tester@example.com","password":"Password123"}'
 ```
 
-### Example: Login
+### Example: create a new post
 
 ```bash
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:3000/api/posts \
   -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"secret123"}'
+  -H "Authorization: Bearer <token>" \
+  -d '{"title":"My First Post","content":"Post body content","summary":"Short preview text"}'
 ```
 
 ## Notes
 
-- The repository is designed for local development and demo use.
-- Replace the in-memory data store with a persistent database for production.
-- Keep sensitive keys out of version control.
+- The current persistence layer is a local JSON database stored in `data/db.json`.
+- The app is intended for demo and local development purposes.
+- In production, replace the JSON backend with a proper database such as PostgreSQL or MongoDB.
+- The project already includes sample content, so you can run it immediately after install.
 
-## Future Improvements
+## Future improvements
 
-- Add post creation and editing
-- Add comment moderation and deletion
-- Add real database persistence (PostgreSQL, MongoDB, SQLite)
-- Add user roles and permissions
-- Add unit and integration tests
+- Add user profile pages and avatars
+- Add post categories or tags
+- Improve comment moderation and admin controls
+- Add unit, integration, and end-to-end tests
+- Add deployment instructions for cloud hosting
 
 ## License
 
-This repository is provided as an example project. Use it freely for learning and development.
+This repository is provided as an example project for learning and experimentation.
