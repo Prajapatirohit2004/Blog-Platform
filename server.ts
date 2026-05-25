@@ -1,9 +1,11 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { GoogleGenerativeAI } from "@google/genai";
 import { db, DbUser } from "./server-db.js";
 
 // Extend Request structure for Custom Authentications
+
 interface AuthenticatedRequest extends Request {
   user?: DbUser;
   token?: string;
@@ -271,6 +273,212 @@ app.delete("/api/comments/:commentId", requireAuth, async (req: AuthenticatedReq
 app.get("/api/health", (req, res) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
+
+// AI Assistant (chat + tool suggestions + execution)
+
+type AiChatRequest = {
+  message: string;
+  // Optional context
+  context?: {
+    view?: "list" | "view" | "create" | "edit" | "dashboard";
+    selectedPostId?: string;
+    selectedCommentId?: string;
+  };
+};
+
+type AiChatAction = {
+  id: string;
+  type: "createPost" | "updatePost" | "deletePost" | "createComment" | "deleteComment";
+  description: string;
+  args: Record<string, unknown>;
+  confirmRequired: boolean;
+};
+
+type AiChatResponse = {
+  replyText: string;
+  actions: AiChatAction[];
+};
+
+// Execute request is validated/permission-checked server-side
+type AiExecuteRequest = {
+  action: AiChatAction["type"];
+  args: Record<string, unknown>;
+  nonce: string;
+  targetPostId?: string;
+  targetCommentId?: string;
+};
+
+function getGeminiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing GEMINI_API_KEY. Create a .env file or set GEMINI_API_KEY in the environment.");
+  }
+  return new GoogleGenerativeAI(apiKey);
+}
+
+function isString(v: unknown): v is string {
+  return typeof v === "string";
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+async function aiGenerateChat(message: string, context?: AiChatRequest["context"]): Promise<AiChatResponse> {
+  const client = getGeminiClient();
+  const model = client.getGenerativeModel({
+    model: "gemini-1.5-flash",
+  });
+
+  // Minimal grounded context
+  const me = (context?.view ? "User provided context." : "") || "";
+
+  const prompt = [
+    "You are an AI assistant embedded in a blog platform.",
+    "You MUST respond with JSON only.",
+    "When you think an action should be executed, propose it in the 'actions' array.",
+    "Each action must be one of: createPost, updatePost, deletePost, createComment, deleteComment.",
+    "For any destructive action (deletePost, deleteComment) set confirmRequired=true.",
+    "For create/update actions also set confirmRequired=true to be safe (the user must approve).",
+    "Do not invent ids; if you need ids, require them in args as empty and let client fill from context.",
+    "Return: { replyText: string, actions: [{ id, type, description, args, confirmRequired }] }.",
+    me,
+    `User message: ${message}`,
+    `Context (may be empty): ${JSON.stringify(context || {})}`,
+    "\nIf you cannot perform actions, return actions: [] and just help with text/ideas." 
+  ].join("\n");
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2,
+    },
+  });
+
+  const text = result.response.text();
+  // Best-effort parse
+  try {
+    const parsed = JSON.parse(text);
+    return parsed as AiChatResponse;
+  } catch {
+    return {
+      replyText: text || "I couldn't parse the assistant response.",
+      actions: [],
+    };
+  }
+}
+
+// 11. AI chat endpoint
+app.post("/api/ai/chat", async (req: AuthenticatedRequest, res: Response) => {
+  const { message, context } = req.body as AiChatRequest;
+  if (!isString(message) || !message.trim()) {
+    return res.status(400).json({ error: "message is required" });
+  }
+
+  try {
+    // Allow chat for both signed-in and signed-out users, but tool suggestions will be validated at execute time.
+    const aiRes = await aiGenerateChat(message, context);
+    return res.json(aiRes);
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "AI chat failed" });
+  }
+});
+
+// 12. AI execute endpoint
+app.post("/api/ai/execute", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body as AiExecuteRequest;
+
+  if (!body || !isString(body.nonce) || !body.action) {
+    return res.status(400).json({ error: "Invalid execute payload." });
+  }
+
+  const { action, args, targetPostId, targetCommentId } = body;
+
+  if (!isRecord(args)) {
+    return res.status(400).json({ error: "args must be an object." });
+  }
+
+  const userId = req.user!.id;
+
+  // Helper: permission checks
+  const isAdmin = userId === "admin-system";
+
+  try {
+    if (action === "createPost") {
+      const title = isString(args.title) ? args.title : "";
+      const content = isString(args.content) ? args.content : "";
+      const summary = isString(args.summary) ? args.summary : "";
+      if (!title.trim() || !content.trim()) {
+        return res.status(400).json({ error: "createPost requires title and content." });
+      }
+      const post = await db.createPost(title.trim(), content.trim(), summary.trim(), userId, req.user!.username);
+      return res.json({ success: true, post });
+    }
+
+    if (action === "updatePost") {
+      const postId = isString(targetPostId) ? targetPostId : (isString(args.postId) ? args.postId : "");
+      if (!postId) return res.status(400).json({ error: "updatePost requires targetPostId." });
+      const post = db.getPostById(postId);
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      if (!isAdmin && post.authorId !== userId) {
+        return res.status(403).json({ error: "Forbidden: not post author." });
+      }
+      const title = isString(args.title) ? args.title : post.title;
+      const content = isString(args.content) ? args.content : post.content;
+      const summary = isString(args.summary) ? args.summary : post.summary;
+      const updated = await db.updatePost(postId, title, content, summary);
+      return res.json({ success: true, post: updated });
+    }
+
+    if (action === "deletePost") {
+      const postId = isString(targetPostId) ? targetPostId : (isString(args.postId) ? args.postId : "");
+      if (!postId) return res.status(400).json({ error: "deletePost requires targetPostId." });
+      const post = db.getPostById(postId);
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      if (!isAdmin && post.authorId !== userId) {
+        return res.status(403).json({ error: "Forbidden: not post author." });
+      }
+      await db.deletePost(postId);
+      return res.json({ success: true });
+    }
+
+    if (action === "createComment") {
+      const postId = isString(targetPostId) ? targetPostId : (isString(args.postId) ? args.postId : "");
+      const content = isString(args.content) ? args.content : "";
+      if (!postId) return res.status(400).json({ error: "createComment requires targetPostId." });
+      if (!content.trim()) return res.status(400).json({ error: "createComment requires content." });
+
+      const post = db.getPostById(postId);
+      if (!post) return res.status(404).json({ error: "Post not found" });
+
+      const comment = await db.createComment(postId, content.trim(), userId, req.user!.username);
+      return res.json({ success: true, comment });
+    }
+
+    if (action === "deleteComment") {
+      const commentId = isString(targetCommentId) ? targetCommentId : (isString(args.commentId) ? args.commentId : "");
+      if (!commentId) return res.status(400).json({ error: "deleteComment requires targetCommentId." });
+      const comment = db.getCommentById(commentId);
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+
+      const post = db.getPostById(comment.postId);
+      const isPostAuthor = !!post && post.authorId === userId;
+      const isCommentAuthor = comment.authorId === userId;
+
+      if (!isAdmin && !isPostAuthor && !isCommentAuthor) {
+        return res.status(403).json({ error: "Forbidden: cannot delete this comment." });
+      }
+
+      await db.deleteComment(commentId);
+      return res.json({ success: true });
+    }
+
+    return res.status(400).json({ error: "Unknown action." });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "AI execute failed" });
+  }
+});
+
 
 // Serve frontend SPA or launch dev server middleware
 if (process.env.NODE_ENV !== "production") {

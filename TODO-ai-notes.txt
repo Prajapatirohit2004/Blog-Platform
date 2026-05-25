@@ -1,0 +1,6 @@
+Plan implemented partially.
+
+Current blocker:
+- TypeScript/lint env in this environment can't find tsc; npx tsc works.
+- We added Gemini import into server.ts; next we must implement AI routes + adjust types safely.
+
