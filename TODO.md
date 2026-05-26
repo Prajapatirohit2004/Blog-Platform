@@ -1,19 +1,17 @@
-# TODO - AI Assistant inside Blog Platform
+# TODO
 
-- [x] Implement AI chat endpoint and response format in `server.ts` (Gemini integration + structured tool suggestions)
-
-- [x] Implement AI action execution endpoint in `server.ts` with strict permission checks
-
-
-- [ ] Add AI assistant UI panel to `src/App.tsx` (chat + suggested actions + confirm/execution)
-
-
-- [ ] Wire UI to existing API refresh functions and handle errors
+- [x] Clear build/cache artifacts (remove dist/, Vite/TS caches, server bundle outputs)
+- [x] Remove and reinstall dependencies (delete node_modules/ + clean npm cache if needed, then npm install)
+- [x] Reset persisted data (restore data/db.json back to initialDb defaults)
+- [x] Run TypeScript check (npm run lint)
+- [x] Start dev server (npm run dev) and confirm /api/health responds
 
 
-- [x] Add/verify required env var usage (`GEMINI_API_KEY`) (Gemini integration groundwork added; endpoint wiring next)
+## Radhe — 2D animated assistant widget
 
-- [x] Run `npm install` (completed) and `npm run dev` (next after AI endpoints/UI)
+- [x] Add Radhe widget (inline SVG + CSS animations)
+- [x] Pop up on screen without blocking AI/auth overlays
+- [x] Add “Hide” button and respect prefers-reduced-motion
 
-- [ ] Manual test scenarios: summarize, create draft (or create), add comment, edit content, permission enforcement
+
 

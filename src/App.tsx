@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { Post, Comment, User } from "./types";
+import type { AiChatResponse, AiSuggestedAction } from "./ai-types";
 
 export default function App() {
   // Navigation & Views
@@ -288,11 +289,125 @@ export default function App() {
     });
   };
 
+  // AI Assistant UI state
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  type AiMessage = { id: string; role: "user" | "assistant"; text: string };
+  const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
+
+  const [aiPendingActions, setAiPendingActions] = useState<AiSuggestedAction[]>([]);
+
+  const getAiContext = () => {
+    return {
+      view,
+      selectedPostId: selectedPostId ?? undefined,
+    };
+  };
+
+  const submitAi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const msg = aiInput.trim();
+    if (!msg) return;
+
+    setAiError(null);
+    setAiLoading(true);
+
+    const myNonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    try {
+      setAiMessages((prev) => [...prev, { id: myNonce, role: "user", text: msg }]);
+      setAiInput("");
+
+      const aiRes = await api.aiChat(msg, getAiContext());
+
+      const assistantId = `${myNonce}-assistant`;
+      setAiMessages((prev) => [...prev, { id: assistantId, role: "assistant", text: aiRes.replyText }]);
+      setAiPendingActions(aiRes.actions || []);
+    } catch (err: any) {
+      setAiError(err?.message || "AI chat failed");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const confirmAndExecuteAction = async (action: AiSuggestedAction) => {
+    setAiError(null);
+    setAiLoading(true);
+    try {
+      const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      const args = action.args || {};
+      const postIdFromArgs = typeof (args as any).postId === "string" ? ((args as any).postId as string) : undefined;
+      const commentIdFromArgs = typeof (args as any).commentId === "string" ? ((args as any).commentId as string) : undefined;
+
+      // Deterministic target id mapping (never clobber with undefined if UI context exists)
+      const targetPostId =
+        action.type === "updatePost" || action.type === "deletePost" || action.type === "createComment"
+          ? postIdFromArgs ?? selectedPostId ?? undefined
+          : undefined;
+
+      const targetCommentId =
+        action.type === "deleteComment"
+          ? commentIdFromArgs ?? undefined
+          : undefined;
+
+      // Fail fast with helpful messages (backend will also validate)
+      if (
+        (action.type === "updatePost" || action.type === "deletePost" || action.type === "createComment") &&
+        !targetPostId
+      ) {
+        throw new Error(`This action requires a target post. Open/Select a post first.`);
+      }
+
+      if (action.type === "deleteComment" && !targetCommentId) {
+        throw new Error(`This action requires a target comment. Delete buttons in the UI provide the correct comment context.`);
+      }
+
+      const payload = {
+        action: action.type,
+        args,
+        nonce,
+        targetPostId,
+        targetCommentId,
+      };
+
+      const result = await api.aiExecute(payload as any);
+
+
+      // Refresh UI if we have relevant targets
+      await refreshPosts();
+      if (selectedPostId) {
+        await loadSinglePost(selectedPostId, true);
+      }
+
+      // Clear pending actions on success
+      setAiPendingActions([]);
+
+      if (result?.post) {
+        setSelectedPostId(result.post.id);
+      }
+
+      setAiMessages((prev) => [...prev, { id: `${nonce}-system`, role: "assistant", text: "✅ Action executed successfully." }]);
+    } catch (err: any) {
+      setAiError(err?.message || "Action execution failed");
+      setAiMessages((prev) => [...prev, { id: `${Date.now()}-err`, role: "assistant", text: `⚠️ ${err?.message || "Action execution failed"}` }]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-[#fafafa] text-[#111111] selection:bg-neutral-200">
+      <RadheAssistant />
+
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-100">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+
           <button 
             id="logo-btn"
             onClick={() => { setView("list"); setSelectedPostId(null); }}
@@ -332,6 +447,16 @@ export default function App() {
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Write</span>
+                </button>
+                <button
+                  id="header-ai-toggle-btn"
+                  onClick={() => { setAiOpen(true); setAiError(null); }}
+                  title="AI Assistant"
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors duration-150 cursor-pointer"
+                >
+                  <span className="inline-flex items-center space-x-1">
+                    <span>AI</span>
+                  </span>
                 </button>
                 <button
                   id="header-logout-btn"
@@ -896,6 +1021,142 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* AI Assistant Drawer */}
+      {aiOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setAiOpen(false)}
+          />
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-neutral-100 mx-4 animate-scaleUp">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-100">
+              <div className="flex items-center space-x-2">
+                <MessageSquare className="w-5 h-5 text-neutral-800" />
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-neutral-950">AI Assistant</h3>
+                  <p className="text-[11px] font-mono text-neutral-500">Gemini-like chat + safe action execution</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAiOpen(false)}
+                className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-900 hover:bg-neutral-50 transition-colors cursor-pointer"
+                aria-label="Close AI assistant"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {aiError && (
+                <div className="mb-3 flex items-start space-x-3 bg-red-50 border border-red-200 text-red-800 px-4 py-3.5 rounded-xl text-sm">
+                  <AlertCircle className="w-4 h-4 mt-0.5 text-red-500 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="font-semibold">Error:</span> {aiError}
+                  </div>
+                  <button onClick={() => setAiError(null)} className="text-red-400 hover:text-red-600 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Messages */}
+              <div className="h-[340px] overflow-y-auto pr-2 space-y-3">
+                {aiMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-neutral-500">
+                    <p className="text-xs font-mono uppercase tracking-widest">Ask anything</p>
+                    <p className="mt-2 text-sm">Example: “Write a blog post about my project idea: …”</p>
+                  </div>
+                ) : (
+                  aiMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={
+                        m.role === "user"
+                          ? "flex justify-end"
+                          : "flex justify-start"
+                      }
+                    >
+                      <div
+                        className={
+                          m.role === "user"
+                            ? "max-w-[78%] bg-neutral-900 text-white px-4 py-3 rounded-2xl rounded-br-sm shadow"
+                            : "max-w-[78%] bg-neutral-100 text-neutral-900 px-4 py-3 rounded-2xl rounded-bl-sm border border-neutral-200"
+                        }
+                      >
+                        <p className="text-sm whitespace-pre-wrap">{m.text}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {aiLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-neutral-100 text-neutral-900 px-4 py-3 rounded-2xl rounded-bl-sm border border-neutral-200">
+                      <p className="text-sm">Thinking…</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Pending actions */}
+              {aiPendingActions.length > 0 && (
+                <div className="mt-4 bg-[#fafafa] border border-neutral-100 rounded-xl p-3">
+                  <p className="text-xs font-mono uppercase tracking-widest text-neutral-500">Proposed Actions</p>
+                  <div className="mt-2 space-y-2">
+                    {aiPendingActions.map((a) => (
+                      <div key={a.id} className="flex items-start justify-between gap-3 bg-white border border-neutral-100 rounded-lg p-3">
+                        <div>
+                          <p className="text-sm font-semibold text-neutral-900">{a.type}</p>
+                          <p className="text-xs text-neutral-600 mt-1">{a.description}</p>
+                        </div>
+                        {a.confirmRequired ? (
+                          <button
+                            onClick={() => confirmAndExecuteAction(a)}
+                            disabled={aiLoading}
+                            className="px-3 py-2 bg-neutral-900 text-white text-xs font-bold rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                          >
+                            Confirm
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => confirmAndExecuteAction(a)}
+                            disabled={aiLoading}
+                            className="px-3 py-2 bg-neutral-100 text-neutral-800 text-xs font-bold rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-50"
+                          >
+                            Execute
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Input */}
+              <form onSubmit={submitAi} className="mt-4 flex items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-mono uppercase tracking-widest text-neutral-500 mb-1">Your message</label>
+                  <textarea
+                    rows={3}
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="Chat with the assistant. It can suggest actions for your posts/comments."
+                    className="w-full text-sm bg-white p-3 border border-neutral-200 rounded-xl focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400 transition-all resize-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={aiLoading}
+                  className="px-4 py-3 bg-neutral-900 text-white text-xs font-bold rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Elegant Auth Side-Drawer overlay */}
       {authMode && (

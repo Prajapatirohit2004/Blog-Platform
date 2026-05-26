@@ -19,3 +19,109 @@ body {
 textarea:focus, input:focus {
   outline: none;
 }
+
+/* Radhe (2D assistant) */
+@keyframes radhe-pop {
+  0% { opacity: 0; transform: translate3d(0, 16px, 0) scale(0.6); }
+  60% { opacity: 1; transform: translate3d(0, -4px, 0) scale(1.06); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes radhe-bob {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -5px, 0); }
+}
+
+@keyframes radhe-spark {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) scale(0.7) rotate(0deg); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(0, -10px, 0) scale(1.1) rotate(25deg); }
+}
+
+.radhe-widget--hidden {
+  animation: none;
+}
+
+.radhe-widget--popped {
+  animation: radhe-pop 520ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+.radhe-btn {
+  position: relative;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 18px;
+}
+
+.radhe-btn:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 4px;
+}
+
+.radhe-popover {
+  position: absolute;
+  right: 92px;
+  bottom: 34px;
+  background: rgba(255,255,255,0.96);
+  border: 1px solid rgba(229,231,235,1);
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-width: 118px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+}
+
+.radhe-title {
+  font-family: var(--font-serif);
+  font-weight: 800;
+  font-size: 14px;
+  color: #0b0b0b;
+}
+
+.radhe-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.radhe-girl {
+  width: 88px;
+  height: 88px;
+  transform-origin: 44px 74px;
+  animation: radhe-bob 2.8s ease-in-out infinite;
+}
+
+.radhe-spark {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #fff7a6, rgba(255, 183, 3, 0.9) 55%, rgba(255, 183, 3, 0.0) 72%);
+  filter: blur(0.2px);
+  animation: radhe-spark 1400ms ease-out infinite;
+}
+
+/* Blink eyelids */
+.radhe-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: radhe-blink 4.2s ease-in-out infinite;
+}
+
+@keyframes radhe-blink {
+  0%, 92%, 100% { transform: scaleY(1); opacity: 1; }
+  94% { transform: scaleY(0.15); opacity: 0.95; }
+  96% { transform: scaleY(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radhe-girl, .radhe-spark, .radhe-blink {
+    animation: none !important;
+  }
+}
+

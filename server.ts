@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenerativeAI } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { db, DbUser } from "./server-db.js";
 
 // Extend Request structure for Custom Authentications
@@ -313,7 +313,7 @@ function getGeminiClient() {
   if (!apiKey) {
     throw new Error("Missing GEMINI_API_KEY. Create a .env file or set GEMINI_API_KEY in the environment.");
   }
-  return new GoogleGenerativeAI(apiKey);
+  return new GoogleGenAI(apiKey);
 }
 
 function isString(v: unknown): v is string {

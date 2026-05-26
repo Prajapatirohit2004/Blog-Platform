@@ -1,4 +1,5 @@
 import { Post, Comment, User, AuthResponse } from "./types";
+import type { AiChatResponse, AiActionType } from "./ai-types";
 
 const getHeaders = () => {
   const token = localStorage.getItem("blog_token");
@@ -160,5 +161,41 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.error || "Failed to remove comment.");
     }
-  }
+  },
+
+  // AI Chat
+  async aiChat(message: string, context?: { view?: string; selectedPostId?: string; selectedCommentId?: string }): Promise<AiChatResponse> {
+    const res = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ message, context: context || undefined }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "AI chat failed");
+    }
+    return data;
+  },
+
+  // AI Execute (requires auth on server)
+  async aiExecute(payload: {
+    action: AiActionType;
+    args: Record<string, unknown>;
+    nonce: string;
+    targetPostId?: string;
+    targetCommentId?: string;
+  }): Promise<{ success: boolean; post?: Post; comment?: Comment }> {
+    const res = await fetch("/api/ai/execute", {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "AI execute failed");
+    }
+    return data;
+  },
 };
